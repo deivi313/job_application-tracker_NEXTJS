@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 
 export default function Home() {
@@ -21,6 +22,20 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      <section className="border-t bg-white py-16">
+        <div>
+          <div>
+            <Button>Organize Applications</Button>
+            <Button>Get Hired</Button>
+            <Button>Manage Boards</Button>
+          </div>
+          <div>
+            <Image src="/hero-images/hero1.png" alt="Organize Applications" />
+          </div>
+        </div>
+      </section>
+
     </main>
   </div>
 }
