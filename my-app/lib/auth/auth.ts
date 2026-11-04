@@ -1,19 +1,11 @@
-
 import { betterAuth } from "better-auth";
-import { mongodbAdapter } from "better-auth/adapters/mongodb";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { initializeUserBoard } from "../init-user-board";
-import connectDB from "../db";
-
-const mongooseInstance = await connectDB();
-const client = mongooseInstance.connection.getClient() as any;
-const db = client.db() as any;
+import { getPool } from "../db";
 
 export const auth = betterAuth({
-  database: mongodbAdapter(db as any, {
-    client: client as any,
-  }),
+  database: getPool(),
   session: {
     cookieCache: {
       enabled: true,

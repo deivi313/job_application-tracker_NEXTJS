@@ -1,51 +1,58 @@
-import mongoose from "mongoose";
-
-const MONGODB_URI = process.env.MONGODB_URI;
-
-interface MongooseCache {
-  conn: typeof mongoose | null;
-  promise: Promise<typeof mongoose> | null;
-}
+import {
+  createPool,
+  type Pool,
+  type PoolConnection,
+  type RowDataPacket,
+} from "mysql2/promise";
 
 declare global {
-  var mongoose: MongooseCache | undefined;
+  // eslint-disable-next-line no-var
+  var mysqlPool: Pool | undefined;
 }
 
-let cached: MongooseCache = global.mongoose || { conn: null, promise: null };
+export function getPool(): Pool {
+  const databaseUrl = process.env.DATABASE_URL;
 
-if (!global.mongoose) {
-  global.mongoose = cached;
-}
-
-async function connectDB() {
-  if (!MONGODB_URI) {
+  if (!databaseUrl) {
     throw new Error(
-      "Please define the MONGODB_URI environment variable inside .env"
+      "Please define the DATABASE_URL environment variable inside .env (e.g. mysql://user:password@localhost:3306/job_tracker)"
     );
   }
 
-  if (cached.conn) {
-    return cached.conn;
-  }
-
-  if (!cached.promise) {
-    const opts = {
-      bufferCommands: false,
-    };
-
-    cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
-      return mongoose;
+  if (!global.mysqlPool) {
+    global.mysqlPool = createPool({
+      uri: databaseUrl,
+      waitForConnections: true,
+      connectionLimit: 10,
+      charset: "utf8mb4",
     });
   }
 
-  try {
-    cached.conn = await cached.promise;
-  } catch (e) {
-    cached.promise = null;
-    throw e;
-  }
-
-  return cached.conn;
+  return global.mysqlPool;
 }
 
-export default connectDB;
+export async function query<T extends RowDataPacket = RowDataPacket>(
+  sql: string,
+  params: any[] = []
+): Promise<T[]> {
+  const [rows] = await getPool().query(sql, params);
+  return rows as unknown as T[];
+}
+
+export async function withTransaction<T>(
+  fn: (conn: PoolConnection) => Promise<T>
+): Promise<T> {
+  const conn = await getPool().getConnection();
+
+  try {
+    await conn.beginTransaction();
+    const result = await fn(conn);
+    await conn.commit();
+    return result;
+  } catch (error) {
+    await conn.rollback();
+    throw error;
+  } finally {
+    conn.release();
+  }
+}

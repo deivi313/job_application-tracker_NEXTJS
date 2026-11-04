@@ -1,8 +1,11 @@
-import connectDB from "../lib/db";
-import "@/lib/models";
-import { Board, Column, JobApplication } from "@/lib/models";
+process.loadEnvFile(".env");
+import type { RowDataPacket } from "mysql2/promise";
+import { query } from "../lib/db";
+import { findBoardForUser } from "../lib/data/board-queries";
+import { initializeUserBoard } from "../lib/init-user-board";
 
-const USER_ID = "6929e34361b6f083d154859d";
+const USER_ID =
+  process.env.SEED_USER_ID ?? "6929e34361b6f083d154859d";
 
 const SAMPLE_JOBS = [
   // Wish List
@@ -85,8 +88,7 @@ const SAMPLE_JOBS = [
     position: "Product Manager",
     location: "Seattle, WA",
     tags: ["Product Strategy", "Agile", "Analytics"],
-    description:
-      "Help drive the product and business planning for our platform",
+    description: "Help drive the product and business planning for our platform",
     jobUrl: "https://example.com/jobs/9",
     salary: "$140k - $170k",
   },
@@ -160,25 +162,28 @@ async function seed() {
     console.log("🌱 Starting seed process...");
     console.log(`📋 Seeding data for user ID: ${USER_ID}`);
 
-    await connectDB();
-    console.log("✅ Connected to database");
+    // Find or create the user's board
+    let boardId: string;
+    let boardName: string;
 
-    // Find the user's board
-    let board = await Board.findOne({ userId: USER_ID, name: "Job Hunt" });
-
-    if (!board) {
-      console.log("⚠️  Board not found. Creating board...");
-      const { initializeUserBoard } = await import("../lib/init-user-board");
-      board = await initializeUserBoard(USER_ID);
-      console.log("✅ Board created");
-    } else {
+    const existingBoard = await findBoardForUser(USER_ID);
+    if (existingBoard) {
       console.log("✅ Board found");
+      boardId = existingBoard.id;
+      boardName = existingBoard.name;
+    } else {
+      console.log("⚠️  Board not found. Creating board...");
+      const created = await initializeUserBoard(USER_ID);
+      console.log("✅ Board created");
+      boardId = created._id;
+      boardName = created.name;
     }
 
     // Get all columns
-    const columns = await Column.find({ boardId: board._id }).sort({
-      order: 1,
-    });
+    const columns = await query<RowDataPacket & { id: string; name: string }>(
+      `SELECT id, name FROM board_columns WHERE board_id = ? ORDER BY sort_order ASC`,
+      [boardId]
+    );
     console.log(`✅ Found ${columns.length} columns`);
 
     if (columns.length === 0) {
@@ -191,22 +196,19 @@ async function seed() {
     // Map column names to column IDs
     const columnMap: Record<string, string> = {};
     columns.forEach((col) => {
-      columnMap[col.name] = col._id.toString();
+      columnMap[col.name] = col.id;
     });
 
     // Clear existing job applications for this user
-    const existingJobs = await JobApplication.find({ userId: USER_ID });
+    const existingJobs = await query<RowDataPacket & { id: string }>(
+      `SELECT id FROM job_applications WHERE user_id = ?`,
+      [USER_ID]
+    );
     if (existingJobs.length > 0) {
       console.log(
         `🗑️  Deleting ${existingJobs.length} existing job applications...`
       );
-      await JobApplication.deleteMany({ userId: USER_ID });
-
-      // Clear job applications from columns
-      for (const column of columns) {
-        column.jobApplications = [];
-        await column.save();
-      }
+      await query(`DELETE FROM job_applications WHERE user_id = ?`, [USER_ID]);
     }
 
     // Distribute jobs across columns
@@ -227,37 +229,37 @@ async function seed() {
         continue;
       }
 
-      const column = columns.find((c) => c.name === columnName);
-      if (!column) continue;
-
       for (let i = 0; i < jobs.length; i++) {
         const jobData = jobs[i];
-        const jobApplication = await JobApplication.create({
-          company: jobData.company,
-          position: jobData.position,
-          location: jobData.location,
-          tags: jobData.tags,
-          description: jobData.description,
-          jobUrl: jobData.jobUrl,
-          salary: jobData.salary,
-          columnId: columnId,
-          boardId: board._id,
-          userId: USER_ID,
-          status: columnName.toLowerCase().replace(" ", "-"),
-          order: i,
-        });
-
-        column.jobApplications.push(jobApplication._id);
+        await query(
+          `INSERT INTO job_applications
+            (id, company, position, location, tags, description, job_url, salary,
+             column_id, board_id, user_id, status, sort_order)
+           VALUES (UUID(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            jobData.company,
+            jobData.position,
+            jobData.location ?? null,
+            JSON.stringify(jobData.tags ?? []),
+            jobData.description ?? null,
+            jobData.jobUrl ?? null,
+            jobData.salary ?? null,
+            columnId,
+            boardId,
+            USER_ID,
+            columnName.toLowerCase().replace(" ", "-"),
+            i,
+          ]
+        );
         totalCreated++;
       }
 
-      await column.save();
       console.log(`✅ Added ${jobs.length} jobs to "${columnName}" column`);
     }
 
     console.log(`\n🎉 Seed completed successfully!`);
     console.log(`📊 Created ${totalCreated} job applications`);
-    console.log(`📋 Board: ${board.name}`);
+    console.log(`📋 Board: ${boardName}`);
     console.log(`👤 User ID: ${USER_ID}`);
 
     process.exit(0);
