@@ -1,6 +1,5 @@
 import connectDB from "./db";
 import { Board, Column } from "./models"
-import jobApplications from "./models/job-applications";
 
 const DEFAULT_COLUMNS = [
 

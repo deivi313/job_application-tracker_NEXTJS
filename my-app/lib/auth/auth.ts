@@ -28,7 +28,12 @@ export const auth = betterAuth({
       create: {
         after: async (user) => {
           if (user.id) {
-            await initializeUserBoard(user.id);
+            try {
+              await initializeUserBoard(user.id);
+              console.log("User board initialized:", user.id);
+            } catch (error) {
+              console.error("Failed to initialize user board:", error);
+            }
           }
         },
       },
