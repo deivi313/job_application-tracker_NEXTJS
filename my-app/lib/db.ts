@@ -25,7 +25,7 @@ export function getPool(): Pool {
       waitForConnections: true,
       connectionLimit: 10,
       charset: "utf8mb4",
-      ssl: { rejectUnauthorized: true },
+      ssl: { rejectUnauthorized: false },
     });
   }
 
