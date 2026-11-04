@@ -1,14 +1,21 @@
+
 import { betterAuth } from "better-auth";
 import { mongodbAdapter } from "better-auth/adapters/mongodb";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import type { Db, MongoClient } from "mongodb";
+import { MongoClient } from "mongodb";
 import { initializeUserBoard } from "../init-user-board";
-import connectDB from "../db";
 
-const mongooseInstance = await connectDB();
-const client = mongooseInstance.connection.getClient() as unknown as MongoClient;
-const db = client.db() as unknown as Db;
+const MONGODB_URI = process.env.MONGODB_URI;
+
+if (!MONGODB_URI) {
+  throw new Error("MONGODB_URI environment variable is missing");
+}
+
+// Create the client without connecting immediately.
+// MongoDB connects when the first database operation is executed.
+const client = new MongoClient(MONGODB_URI);
+const db = client.db();
 
 export const auth = betterAuth({
   database: mongodbAdapter(db, {
